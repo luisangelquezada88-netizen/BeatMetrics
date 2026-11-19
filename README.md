@@ -25,7 +25,7 @@ flowchart LR
     F --> G[Dashboard Streamlit<br/>URL pública]
 
     subgraph Automatización - GitHub Actions
-        H[Cron diario 05:00 UTC<br/>lun=full 4 shards<br/>mar-dom=daily incremental]
+        H[Cron diario 05:00 UTC<br/>1 job + cursor por query<br/>presupuesto 400 req]
     end
     H -. dispara .-> B
 ```
@@ -42,7 +42,8 @@ Capas en MongoDB:
 |---|---|
 | `curated_tracks` | Tracks aplanados y deduplicados (índice único `spotify_track_id`) |
 | `analysis_tracks` | Dataset derivado para el dashboard (año, duración, contadores) |
-| `ingestion_runs` | Metadata por corrida: modo, queries, requests, `popularity_stats`, errores |
+| `query_cursors` | Cursor por query: próximo offset a pedir y si ya se agotó |
+| `ingestion_runs` | Metadata por corrida: modo, requests, `http_429_count`, nuevos vs existentes, errores |
 
 ## Opción A — Ver el dashboard (sin instalar nada)
 
@@ -83,9 +84,12 @@ python scripts/inspect_curated.py                       # ver un documento de ej
 
 ## Automatización y despliegue
 
-- **Scheduling:** GitHub Actions, cron diario 05:00 UTC (lunes = full en
-  4 shards paralelos, resto = daily incremental) + disparo manual.
+- **Scheduling:** GitHub Actions, cron diario 05:00 UTC (un solo job con
+  cursor persistente por query: nunca relee lo ya capturado) + disparo manual.
   Detalle: [`docs/automation.md`](docs/automation.md).
+- **Crecimiento:** cada corrida gasta su presupuesto de requests en
+  páginas que nunca se pidieron (cursor por query), no en refrescar lo ya
+  capturado. Medido: ~6–7 tracks nuevos por request.
 - **Base de datos:** MongoDB Atlas M0 (tier gratuito permanente).
 - **Dashboard:** Streamlit Community Cloud (URL pública).
   Paso a paso: [`docs/deployment.md`](docs/deployment.md).
@@ -102,9 +106,10 @@ Secretos requeridos (`Settings → Secrets → Actions` y Secrets de Streamlit):
 
 - La app de Spotify rechaza `limit > 10` en search (`400 Invalid limit`,
   verificado 2026-09-15): `config/settings.yaml` fija `limit: 10`.
-- Spotify aplica rate limits agresivos en Development Mode: el pipeline usa
-  parada temprana de paginación, backoff con `Retry-After` topado y aborto
-  con progreso parcial (`status: quota_exhausted`) ante baneos largos.
+- Spotify aplica rate limits agresivos en Development Mode (~600 requests/día;
+  al pasarlo responde `429` con `Retry-After` de hasta 24 h). Por eso corre un
+  solo job con presupuesto configurable (`request_budget`), backoff topado y
+  aborto con progreso parcial (`status: quota_exhausted`).
 - `popularity` puede llegar nulo desde la API para parte del catálogo;
   se hidrata con `scripts/backfill_popularity.py`.
 

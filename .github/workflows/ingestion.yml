@@ -20,6 +20,10 @@ on:
         description: "Smoke test: nº de queries (vacío = todas)"
         required: false
         default: ""
+      request_budget:
+        description: "Techo de requests de la corrida (vacío = settings)"
+        required: false
+        default: ""
 
 # NOTA cuenta Free + repo privado: `schedule` no dispara en privados.
 # Opciones: repo público (recomendado, es portafolio) o cron-job.org -> workflow_dispatch.
@@ -44,19 +48,16 @@ jobs:
   ingest:
     needs: decide
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-    # Full semanal en 2 shards escalonados (ritmo sostenible anti-429);
-    # daily en 1 job con paginación corta (refresco, no re-scrape).
-    strategy:
-      matrix:
-        shard: ${{ needs.decide.outputs.mode == 'full' && fromJSON('[0, 1]') || fromJSON('[0]') }}
-      fail-fast: false
+    timeout-minutes: 180
+    # Un solo job, siempre. Dos shards en paralelo (~700 requests en minutos)
+    # fue lo que disparó el baneo de 24 h del 2026-11-16.
     env:
       SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
       SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
       MONGO_URI: ${{ secrets.MONGO_URI }}
       MONGO_DB_NAME: ${{ secrets.MONGO_DB_NAME }}
       MIN_POPULARITY: ${{ inputs.min_popularity || '0' }}
+      REQUEST_BUDGET: ${{ inputs.request_budget }}
     steps:
       - uses: actions/checkout@v4
 
@@ -71,19 +72,16 @@ jobs:
       - name: Smoke check (sin DB)
         run: python -m compileall -q src scripts run_ingestion.py
 
-      - name: Run ingestion (mode=${{ needs.decide.outputs.mode }} shard=${{ matrix.shard }})
+      - name: Run ingestion (mode=${{ needs.decide.outputs.mode }})
         run: |
-          ARGS="--mode ${{ needs.decide.outputs.mode }} --shard-index ${{ matrix.shard }}"
-          if [ "${{ needs.decide.outputs.mode }}" = "full" ]; then
-            ARGS="$ARGS --num-shards 2 --shard-delay-seconds $(( ${{ matrix.shard }} * 600 ))"
-          else
-            ARGS="$ARGS --max-pages 5"
-          fi
+          ARGS="--mode ${{ needs.decide.outputs.mode }}"
           if [ -n "${{ inputs.limit_queries }}" ]; then
             ARGS="$ARGS --limit-queries ${{ inputs.limit_queries }}"
           fi
+          if [ -n "${{ inputs.request_budget }}" ]; then
+            ARGS="$ARGS --request-budget ${{ inputs.request_budget }}"
+          fi
           python run_ingestion.py $ARGS
 
-      - name: Build analysis dataset (solo shard 0)
-        if: matrix.shard == 0
+      - name: Build analysis dataset
         run: python scripts/build_analysis.py

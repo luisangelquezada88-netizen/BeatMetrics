@@ -7,8 +7,8 @@ settings:
     # Matriz de búsqueda: término × año. Escala a 200k-500k ampliando esta lista.
     # LÍMITE VERIFICADO 2026-09-15: esta app rechaza limit>10 con 400 "Invalid limit"
     # (probado: 10 OK, 20 FAIL). No subir sin re-probar.
-    # Techo por query: limit(10) × max_pages(50) = 500 (offsets 0-490, bajo el cap 1000).
-    # 10 términos × 8 años × 500 = 40k máx/corrida full (únicos reales ~20-30k).
+    # Techo por query: limit(10) × 100 páginas = 1.000 (offsets 0-990).
+    # 32 términos × 8 años × 1.000 = 256k brutos máximos.
     query_terms:
       - techno
       - house
@@ -43,14 +43,22 @@ settings:
       - breakbeat
       - jungle
     limit: 10
-    max_pages: 50
+    # La API rechaza limit>10 (400 "Invalid limit") y limita offset+limit <= 1000.
+    # Con limit=10 el último offset útil es 990.
+    max_search_offset: 990
+    # Presupuesto por corrida. La app en Development Mode banea ~24 h al pasar
+    # de ~600 requests diarios: se sube gradualmente (300 -> 400 -> 500).
+    request_budget: 400
+    # Páginas por query y por corrida (10 páginas = 100 requests = 1.000 tracks).
+    pages_per_query_run: 10
     sleep_seconds: 2
 
   project:
     start_year: 2018
     end_year: 2025
-    # Refresh diario: solo estos últimos N años (barato). Full semanal: todo.
-    recent_years: 3
+    # Cobertura del modo daily. 8 = toda la matriz (2018-2025): el cursor
+    # decide qué falta, así que restringir años solo desperdicia cuota.
+    recent_years: 8
     # 0 = sin filtro. Subir a 20-30 para quedarse con tracks relevantes.
     min_popularity: 0
 

@@ -5,22 +5,62 @@
 Un solo workflow `.github/workflows/ingestion.yml`:
 
 - **Cron diario `0 5 * * *` (UTC).** El job `decide` elige modo:
-  - Lunes → `full` (matriz completa, 4 shards paralelos).
-  - Martes–domingo → `daily` (solo `recent_years` de `config/settings.yaml`, 1 job).
-- **`workflow_dispatch`** para corrida manual con inputs: `mode`, `min_popularity`, `limit_queries`.
+  - Lunes → `full` (matriz completa, 32 términos × 8 años = 256 queries).
+  - Martes–domingo → `daily` (misma matriz: `recent_years: 8`).
+  El modo ya no cambia el alcance; el **cursor** decide qué falta.
+- **`workflow_dispatch`** para corrida manual con inputs: `mode`,
+  `min_popularity`, `limit_queries`, `request_budget`.
 
-Estimación: daily ~10 min (~150 requests con `--max-pages 5`), full ~3–4 h
-en 2 shards escalonados (shard 1 arranca 10 min después). Consumo mensual
-~1.000 min, dentro de los 2.000 free (privado) o ilimitado (público).
+Un **solo job**, siempre. Dos shards en paralelo (~700 requests en minutos)
+dispararon el baneo de 24 h del 2026-11-16.
 
-## Ritmo sostenible anti-429
+Duración: ~400 requests × 2 s ≈ 15 min + escrituras. Consumo mensual
+~450 min, dentro de los 2.000 free (privado) o ilimitado (público).
 
-- Full: 2 shards (no 4) + `sleep_seconds: 2` + arranque escalonado 10 min.
-- Daily: paginación corta (`--max-pages 5`): refresca el top en vez de
-  re-scrapear 50 páginas que el upsert descartaría por duplicadas.
+## Cómo crece el dataset (importante)
+
+Cada query se pagina de 10 en 10 (límite de la app), con offsets 0–990:
+hasta **1.000 tracks por query**. El estado vive en la colección
+`query_cursors`:
+
+| Campo | Significado |
+|---|---|
+| `next_offset` | Primera página que **no** se ha pedido todavía |
+| `exhausted` | La query devolvió una página corta: no hay más resultados |
+| `last_run_at` | Rotación justa: primero las queries tocadas hace más tiempo |
+
+Consecuencia: una corrida **nunca relee lo ya capturado**. Antes el daily
+gastaba 292 requests en las mismas 96 queries desde offset 0 y sumaba
+~7 tracks nuevos; ahora el mismo presupuesto avanza terreno inédito
+(~85–95 % de novedad medido en offsets 500–990).
+
+Crecimiento medido: **6–7 tracks nuevos por request**; con
+`request_budget: 400` son **~2.500–2.800/día**. Los 100.000 se alcanzan en
+**~4 semanas** sin tocar código: el motor solo consume la matriz
+(256 queries × hasta 1.000 tracks = 256k de techo bruto).
+
+## Presupuesto y cuota
+
+- `request_budget` (settings o `--request-budget` / env `REQUEST_BUDGET`):
+  techo de requests por corrida. Se corta limpio con `stop_reason:
+  budget_reached` (status verde).
+- `sleep_seconds: 2` entre páginas.
+- Techo observado de la app en Development Mode: ~600 requests/día; al
+  pasarlo responde 429 con `Retry-After` de ~24 h. Subir el presupuesto
+  de 400 → 500 solo si `http_429_count` se mantiene en 0 varios días.
+- Telemetría por corrida en `ingestion_runs`: `total_requests`,
+  `http_429_count`, `retry_after_max_seconds`, `stop_reason`,
+  `total_inserted_new`, `total_matched_existing`, `queries_exhausted_now`.
 - Circuit breaker: cada corrida sondea con 1 request; si la cuota sigue
   quemada registra `skipped_quota` y termina en verde sin quemar cientos
-  de requests (típico el día después de un full con baneo).
+  de requests.
+
+## Cuándo ampliar la matriz
+
+El motor agota queries: cuando `queries_exhausted_now` crece y
+`total_inserted_new` cae por debajo de ~500/corrida de forma sostenida,
+toca añadir términos a `spotify.query_terms` (cada término nuevo aporta
+8 queries × hasta 1.000 tracks). Ver `docs/runbook.md`.
 
 ## Aviso cuenta Free + repo privado
 
@@ -42,14 +82,8 @@ Opciones:
 
 Rotación: regenerar en Spotify/Atlas y actualizar aquí. Nunca en código.
 
-## Smoke test antes del full
+## Smoke test antes de un cambio grande
 
-Actions → Ingestion pipeline → Run workflow → `limit_queries: 2`, `mode: daily`.
-Verifica en logs: `popularity stats` (min/max/avg/nulos) y `Status: completed`.
-
-## Sharding
-
-`--shard-index i --num-shards 4` reparte queries por módulo (`queries[i::4]`).
-Cada shard escribe su propio doc en `ingestion_runs` con `shard_index/num_shards`.
-El índice único en `spotify_track_id` evita duplicados entre shards.
-`build_analysis.py` corre solo en shard 0 para no duplicar el rebuild.
+Actions → Ingestion pipeline → Run workflow → `limit_queries: 2`,
+`request_budget: 20`, `mode: daily`.
+Verifica en logs: `Resumen: requests=../20 ... nuevos=... | 429=0`.

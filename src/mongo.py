@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from pymongo import ASCENDING, MongoClient, ReplaceOne
 from pymongo.errors import BulkWriteError, PyMongoError
 
@@ -58,6 +60,44 @@ def ensure_indexes(collection_name: str = "curated_tracks") -> None:
     collection.create_index([("popularity", ASCENDING)])
     collection.create_index([("search_query", ASCENDING)])
     logger.info("Índices verificados en %s", collection_name)
+
+
+CURSORS_COLLECTION = "query_cursors"
+
+
+def get_query_cursors() -> dict[str, dict]:
+    """Estado de avance por query: {query: {next_offset, exhausted, ...}}.
+
+    Es la memoria del pipeline: sin esto cada corrida vuelve a pedir las
+    mismas páginas y el 90% de los requests se gasta deduplicando.
+    """
+    collection = get_collection(CURSORS_COLLECTION)
+    collection.create_index([("query", ASCENDING)], unique=True)
+    return {doc["query"]: doc for doc in collection.find({})}
+
+
+def upsert_query_cursor(
+    query: str,
+    next_offset: int,
+    exhausted: bool,
+    stats: dict | None = None,
+    last_run_at: str | None = None,
+) -> None:
+    """Guarda el próximo offset a pedir y acumula estadísticas de por vida."""
+    collection = get_collection(CURSORS_COLLECTION)
+    now = last_run_at or datetime.now(UTC).isoformat()
+    update: dict = {
+        "$set": {
+            "next_offset": next_offset,
+            "exhausted": exhausted,
+            "last_run_at": now,
+            "last_status": "exhausted" if exhausted else "in_progress",
+        },
+        "$setOnInsert": {"query": query, "created_at": now},
+    }
+    if stats:
+        update["$inc"] = stats
+    collection.update_one({"query": query}, update, upsert=True)
 
 
 def insert_one_document(collection_name: str, document: dict):

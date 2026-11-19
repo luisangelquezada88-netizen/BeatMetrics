@@ -29,6 +29,19 @@ class SpotifyQuotaExhausted(SpotifySearchError):
 # Tope de espera por reintento: más que esto = baneo largo, no ventana corta.
 MAX_RETRY_WAIT_SECONDS = 300
 
+# Telemetría de throttling: permite saber si el presupuesto diario está
+# rozando el techo de cuota de la app sin esperar a que aparezca un baneo.
+_retry_stats = {"http_429": 0, "retry_after_max": 0}
+
+
+def reset_retry_stats() -> None:
+    _retry_stats["http_429"] = 0
+    _retry_stats["retry_after_max"] = 0
+
+
+def get_retry_stats() -> dict:
+    return dict(_retry_stats)
+
 
 def _retry_after_seconds(response: requests.Response | None) -> int | None:
     if response is not None:
@@ -107,6 +120,12 @@ def search_tracks(
             continue
 
         if response.status_code in (429, 500, 502, 503, 504):
+            if response.status_code == 429:
+                _retry_stats["http_429"] += 1
+                _retry_stats["retry_after_max"] = max(
+                    _retry_stats["retry_after_max"],
+                    _retry_after_seconds(response) or 0,
+                )
             logger.warning(
                 "Spotify respondió %s (intento %s/%s)",
                 response.status_code, attempt + 1, max_retries + 1,
