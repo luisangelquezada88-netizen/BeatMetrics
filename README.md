@@ -1,16 +1,26 @@
-# Spotify Electrónica Colombia
+# BeatMetrics
 
 [![CI](https://github.com/luisangelquezada88-netizen/spotify-electronica-colombia/actions/workflows/ci.yml/badge.svg)](https://github.com/luisangelquezada88-netizen/spotify-electronica-colombia/actions/workflows/ci.yml)
 [![Ingestion](https://github.com/luisangelquezada88-netizen/spotify-electronica-colombia/actions/workflows/ingestion.yml/badge.svg)](https://github.com/luisangelquezada88-netizen/spotify-electronica-colombia/actions/workflows/ingestion.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Luis%20Angel%20Quezada-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/luis-angel-quezada-aguirre-291333268)
+
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Spotify Web API](https://img.shields.io/badge/Spotify-Web%20API-1DB954?logo=spotify&logoColor=white)](https://developer.spotify.com/documentation/web-api)
+[![MongoDB Atlas](https://img.shields.io/badge/MongoDB-Atlas%20M0-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
+[![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Plotly](https://img.shields.io/badge/Plotly-6.9-3F4F75?logo=plotly&logoColor=white)](https://plotly.com/python/)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
 **Live demo:** https://spotify-electronica-colombia.streamlit.app
 
 *Nota*: Si la app se encuentra dormida por inactividad, presiona `Yes, get this app back up!`
 
-Pipeline ELT end-to-end para recolectar, almacenar, transformar y visualizar
-metadatos de música electrónica asociada al mercado colombiano, usando la
-Spotify Web API como fuente y MongoDB como capa de aterrizaje.
-Automatizado con GitHub Actions y desplegado a **costo cero**
+**BeatMetrics** es un pipeline ELT end-to-end para recolectar, almacenar,
+transformar y visualizar metadatos de música electrónica asociada al mercado
+colombiano, usando la Spotify Web API como fuente y MongoDB como capa de
+aterrizaje. Automatizado con GitHub Actions y desplegado a **costo cero**
 (MongoDB Atlas M0 + Streamlit Community Cloud).
 
 ## Arquitectura de datos
@@ -125,5 +135,14 @@ Secretos requeridos (`Settings → Secrets → Actions` y Secrets de Streamlit):
 ├── src/                    # auth, search, ingestion, transform, mongo, dashboard_app
 ├── tests/diagnostics/      # checks manuales de conexión, conteos y agregaciones
 ├── Dockerfile
-└── run_ingestion.py        # entrypoint CLI
+├── run_ingestion.py        # entrypoint CLI
+└── LICENSE                 # MIT
 ```
+
+## Licencia
+
+Distribuido bajo licencia **MIT**. Ver [`LICENSE`](LICENSE).
+
+Los metadatos musicales provienen de la Spotify Web API y siguen sujetos a
+los [términos de uso de Spotify](https://developer.spotify.com/terms); este
+repositorio solo distribuye el código de la infraestructura.
